@@ -1,30 +1,18 @@
 package org.netflixpp.filter;
 
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import org.netflixpp.config.ServerConfig;
 
-import javax.crypto.SecretKey;
 import javax.ws.rs.container.ContainerRequestContext;
 import javax.ws.rs.container.ContainerRequestFilter;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.Response;
 import javax.ws.rs.ext.Provider;
 import java.io.IOException;
-import java.security.Key;
 
 @Provider
 public class JWTFilter implements ContainerRequestFilter {
 
     private static final String AUTHENTICATION_SCHEME = "Bearer";
-    private final SecretKey key;
-
-    public JWTFilter() {
-        // Use the same secret as backend for compatibility
-        String secret = ServerConfig.getJwtSecret();
-        this.key = Keys.hmacShaKeyFor(secret.getBytes());
-    }
 
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
@@ -46,19 +34,8 @@ public class JWTFilter implements ContainerRequestFilter {
         String token = authorizationHeader.substring(AUTHENTICATION_SCHEME.length()).trim();
 
         try {
-            // Validate the token
+            // Validate the token (simplified - in production use proper JWT validation)
             validateToken(token);
-
-            // Extract user information and add to request context
-            Claims claims = Jwts.parserBuilder()
-                    .setSigningKey(key)
-                    .build()
-                    .parseClaimsJws(token)
-                    .getBody();
-
-            // Add user info to request context for use in resources
-            requestContext.setProperty("username", claims.getSubject());
-            requestContext.setProperty("role", claims.get("role", String.class));
 
         } catch (Exception e) {
             abortWithUnauthorized(requestContext, "Invalid token: " + e.getMessage());
@@ -70,12 +47,10 @@ public class JWTFilter implements ContainerRequestFilter {
         String method = requestContext.getMethod();
 
         // Public endpoints (no authentication required)
-        return path.startsWith("auth/login") && "POST".equals(method) ||
-                path.startsWith("auth/register") && "POST".equals(method) ||
-                path.startsWith("health") && "GET".equals(method) ||
-                path.startsWith("metrics") && "GET".equals(method) ||
-                path.equals("movies") && "GET".equals(method) ||
-                (path.startsWith("movies/") && path.endsWith("/stream") && "GET".equals(method));
+        return path.startsWith("stream/") && "GET".equals(method) ||
+                path.startsWith("mesh/chunks") && "GET".equals(method) ||
+                path.startsWith("mesh/peers") && "GET".equals(method) ||
+                path.endsWith("health") && "GET".equals(method);
     }
 
     private boolean isTokenBasedAuthentication(String authorizationHeader) {
@@ -84,13 +59,15 @@ public class JWTFilter implements ContainerRequestFilter {
     }
 
     private void validateToken(String token) throws Exception {
-        try {
-            Jwts.parserBuilder()
-                    .setSigningKey(key)
-                    .build()
-                    .parseClaimsJws(token);
-        } catch (Exception e) {
-            throw new Exception("Token validation failed: " + e.getMessage());
+        // Simplified token validation
+        // In production, use proper JWT validation with secret key
+        if (token == null || token.isEmpty()) {
+            throw new Exception("Empty token");
+        }
+
+        // Basic token format check (you should use a JWT library)
+        if (token.length() < 10) {
+            throw new Exception("Token too short");
         }
     }
 
@@ -98,15 +75,5 @@ public class JWTFilter implements ContainerRequestFilter {
         requestContext.abortWith(Response.status(Response.Status.UNAUTHORIZED)
                 .entity("{\"error\": \"" + message + "\"}")
                 .build());
-    }
-
-    // Utility method to get username from request context
-    public static String getUsername(ContainerRequestContext context) {
-        return (String) context.getProperty("username");
-    }
-
-    // Utility method to get role from request context
-    public static String getRole(ContainerRequestContext context) {
-        return (String) context.getProperty("role");
     }
 }

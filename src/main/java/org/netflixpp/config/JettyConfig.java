@@ -18,7 +18,7 @@ public class JettyConfig {
         // Configure Jersey for API routes
         setupJersey(context);
 
-        // Configure static file serving with Jetty's DefaultServlet
+        // Configure static file serving
         setupStaticFiles(context);
 
         return server;
@@ -28,18 +28,22 @@ public class JettyConfig {
         // Jersey servlet for API routes
         ServletHolder jerseyServlet = new ServletHolder(new ServletContainer());
         jerseyServlet.setInitOrder(0);
-        // Use our ResourceConfig subclass
         jerseyServlet.setInitParameter("javax.ws.rs.Application",
-                "org.netflixpp.config.JerseyConfig");
+                JerseyConfig.class.getName());
         context.addServlet(jerseyServlet, "/api/*");
     }
 
     private static void setupStaticFiles(ServletContextHandler context) {
-        // Serve static files from /storage path using Jetty's DefaultServlet
+        // Serve static files from storage path using Jetty's DefaultServlet
         ServletHolder staticServlet = new ServletHolder("static", DefaultServlet.class);
-        staticServlet.setInitParameter("resourceBase", "./storage");
+        staticServlet.setInitParameter("resourceBase", "./" + ServerConfig.getStoragePath());
         staticServlet.setInitParameter("pathInfoOnly", "true");
         staticServlet.setInitParameter("dirAllowed", "false");
+
+        // Set MIME types for video files
+        staticServlet.setInitParameter("mimeTypes",
+                "mp4=video/mp4,m4v=video/mp4,ts=video/MP2T,bin=application/octet-stream");
+
         context.addServlet(staticServlet, "/storage/*");
     }
 }

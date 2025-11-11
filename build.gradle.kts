@@ -13,6 +13,8 @@ val jerseyVersion = "2.41"
 val jettyVersion = "9.4.54.v20240208"
 val log4jVersion = "2.22.1"
 val jjwtVersion = "0.11.5"
+val nettyVersion = "4.1.110.Final"
+val slf4jVersion = "2.0.13"
 
 dependencies {
     // Jersey (JAX-RS) with javax.* packages
@@ -26,9 +28,14 @@ dependencies {
     implementation("org.eclipse.jetty:jetty-server:$jettyVersion")
     implementation("org.eclipse.jetty:jetty-servlet:$jettyVersion")
 
-    // Logging
+    // Logging (Log4j2 + SLF4J binding)
     implementation("org.apache.logging.log4j:log4j-api:$log4jVersion")
     implementation("org.apache.logging.log4j:log4j-core:$log4jVersion")
+    implementation("org.apache.logging.log4j:log4j-slf4j-impl:$log4jVersion")
+    implementation("org.slf4j:slf4j-api:$slf4jVersion")
+
+    // Netty for P2P mesh components
+    implementation("io.netty:netty-all:$nettyVersion")
 
     // JWT
     implementation("io.jsonwebtoken:jjwt-api:$jjwtVersion")

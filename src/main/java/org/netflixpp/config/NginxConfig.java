@@ -1,8 +1,10 @@
 package org.netflixpp.config;
 
 import java.io.*;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.net.URL;
+import java.nio.file.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 public class NginxConfig {
 
@@ -10,71 +12,40 @@ public class NginxConfig {
         worker_processes 1;
         error_log logs/nginx_error.log;
         pid logs/nginx.pid;
-        
+
         events {
             worker_connections 1024;
         }
-        
+
         http {
             include mime.types;
             default_type application/octet-stream;
             sendfile on;
             keepalive_timeout 65;
-            
-            # Upstream backend servers
+
             upstream backend_servers {
                 server localhost:8080;
             }
-            
-            # Main server block
+
             server {
                 listen 80;
                 server_name localhost;
-                
-                # API routes - proxy to Jetty
+
                 location /api/ {
                     proxy_pass http://backend_servers;
                     proxy_set_header Host $host;
                     proxy_set_header X-Real-IP $remote_addr;
                     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                     proxy_set_header X-Forwarded-Proto $scheme;
-                    
-                    # CORS headers
-                    add_header Access-Control-Allow-Origin *;
-                    add_header Access-Control-Allow-Methods 'GET, POST, PUT, DELETE, OPTIONS';
-                    add_header Access-Control-Allow-Headers 'Origin, Content-Type, Accept, Authorization, Range';
-                    add_header Access-Control-Expose-Headers 'Content-Range, Accept-Ranges';
-                    
-                    # Handle preflight requests
-                    if ($request_method = 'OPTIONS') {
-                        add_header Access-Control-Allow-Origin *;
-                        add_header Access-Control-Allow-Methods 'GET, POST, PUT, DELETE, OPTIONS';
-                        add_header Access-Control-Allow-Headers 'Origin, Content-Type, Accept, Authorization, Range';
-                        add_header Access-Control-Max-Age 86400;
-                        return 204;
-                    }
                 }
-                
-                # Static file serving for videos
+
                 location /storage/ {
-                    alias storage/;
-                    add_header Access-Control-Allow-Origin *;
-                    add_header Access-Control-Allow-Methods 'GET, OPTIONS';
-                    add_header Access-Control-Allow-Headers 'Range';
-                    add_header Access-Control-Expose-Headers 'Content-Range, Accept-Ranges';
-                    
-                    # Video streaming support
-                    mp4;
-                    mp4_buffer_size 1m;
-                    mp4_max_buffer_size 5m;
-                    
-                    # Range requests for video streaming
-                    proxy_set_header Range $http_range;
-                    proxy_set_header If-Range $http_if_range;
-                    proxy_no_cache $http_range $http_if_range;
+                    proxy_pass http://backend_servers;
+                    proxy_buffering off;
+                    proxy_http_version 1.1;
+                    proxy_set_header Connection '';
                 }
-                
-                # Root redirect to API
+
                 location / {
                     return 302 /api/;
                 }
@@ -82,57 +53,106 @@ public class NginxConfig {
         }
         """;
 
+    private static final String MIME_TYPES = """
+        types {
+            text/html html htm shtml;
+            text/css css;
+            text/xml xml;
+            image/gif gif;
+            image/jpeg jpeg jpg;
+            application/javascript js;
+            video/mp4 mp4 m4v;
+            video/webm webm;
+            video/ogg ogv;
+            video/x-flv flv;
+            video/x-msvideo avi;
+        }
+        """;
+
+    // URL oficial (binário Windows). Podes trocar para Linux/macOS se quiseres.
+    private static final String NGINX_URL = "https://nginx.org/download/nginx-1.26.0.zip";
+    private static final Path NGINX_DIR = Paths.get("nginx");
+    private static final Path NGINX_BIN = NGINX_DIR.resolve("nginx-1.26.0/nginx.exe");
+
     public static void setupNginx() throws IOException {
-        // Create nginx directory
-        Files.createDirectories(Paths.get("nginx"));
-
-        // Write nginx configuration
-        Files.writeString(Paths.get("nginx/nginx.conf"), NGINX_CONF);
-
+        Files.createDirectories(NGINX_DIR);
+        Files.writeString(NGINX_DIR.resolve("nginx.conf"), NGINX_CONF);
+        Files.writeString(NGINX_DIR.resolve("mime.types"), MIME_TYPES);
         System.out.println("📄 NGINX configuration created");
     }
 
     public static void startNginx() throws IOException, InterruptedException {
-        // Check if nginx is installed
-        ProcessBuilder checkPb = new ProcessBuilder("nginx", "-v");
-        try {
-            Process checkProcess = checkPb.start();
-            if (checkProcess.waitFor() != 0) {
-                throw new IOException("NGINX not found. Please install NGINX.");
-            }
-        } catch (IOException e) {
-            throw new IOException("NGINX not installed or not in PATH. Please install NGINX.");
+        // Se não existir binário, baixa e extrai automaticamente
+        if (!Files.exists(NGINX_BIN)) {
+            System.out.println("⬇️ NGINX not found locally — downloading...");
+            downloadAndExtractNginx();
         }
 
-        // Start nginx with our config
+        // Verifica se realmente foi baixado
+        if (!Files.exists(NGINX_BIN)) {
+            throw new IOException("❌ Could not download NGINX automatically.");
+        }
+
+        System.out.println("🔧 Starting NGINX from local folder...");
+        stopNginx(); // Para qualquer instância anterior
+
         ProcessBuilder pb = new ProcessBuilder(
-                "nginx", "-c", Paths.get("nginx/nginx.conf").toAbsolutePath().toString(),
-                "-p", Paths.get(".").toAbsolutePath().toString()
+                NGINX_BIN.toAbsolutePath().toString(),
+                "-c", NGINX_DIR.resolve("nginx.conf").toAbsolutePath().toString(),
+                "-p", NGINX_DIR.toAbsolutePath().toString()
         );
-
+        pb.directory(NGINX_DIR.toFile());
+        pb.redirectErrorStream(true);
         Process process = pb.start();
-        int exitCode = process.waitFor();
 
-        if (exitCode != 0) {
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getErrorStream()))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    System.err.println("NGINX Error: " + line);
-                }
+        Thread.sleep(2000); // aguarda iniciar
+        System.out.println("✅ NGINX started on port 80 (local mode)");
+    }
+
+    private static void downloadAndExtractNginx() {
+        try {
+            Files.createDirectories(NGINX_DIR);
+            Path zipPath = NGINX_DIR.resolve("nginx.zip");
+            System.out.println("📥 Downloading NGINX from: " + NGINX_URL);
+
+            try (InputStream in = new URL(NGINX_URL).openStream()) {
+                Files.copy(in, zipPath, StandardCopyOption.REPLACE_EXISTING);
             }
-            throw new IOException("Failed to start NGINX. Exit code: " + exitCode);
+
+            System.out.println("📦 Extracting NGINX...");
+            unzip(zipPath, NGINX_DIR);
+
+            System.out.println("✅ NGINX downloaded and extracted to " + NGINX_DIR.toAbsolutePath());
+        } catch (Exception e) {
+            System.err.println("❌ Failed to auto-install NGINX: " + e.getMessage());
         }
     }
 
-    public static void stopNginx() throws IOException, InterruptedException {
-        ProcessBuilder pb = new ProcessBuilder(
-                "nginx", "-s", "stop",
-                "-c", Paths.get("nginx/nginx.conf").toAbsolutePath().toString(),
-                "-p", Paths.get(".").toAbsolutePath().toString()
-        );
+    private static void unzip(Path zipFile, Path targetDir) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipFile.toFile()))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                Path newPath = targetDir.resolve(entry.getName());
+                if (entry.isDirectory()) {
+                    Files.createDirectories(newPath);
+                } else {
+                    Files.createDirectories(newPath.getParent());
+                    Files.copy(zis, newPath, StandardCopyOption.REPLACE_EXISTING);
+                }
+                zis.closeEntry();
+            }
+        }
+    }
 
-        Process process = pb.start();
-        process.waitFor();
+    public static void stopNginx() {
+        try {
+            new ProcessBuilder(
+                    NGINX_BIN.toAbsolutePath().toString(),
+                    "-s", "quit",
+                    "-p", NGINX_DIR.toAbsolutePath().toString()
+            ).start().waitFor();
+            Thread.sleep(1000);
+        } catch (Exception ignored) {
+        }
     }
 }

@@ -10,16 +10,17 @@ import javax.ws.rs.ApplicationPath;
 @ApplicationPath("/api")
 public class JerseyConfig extends ResourceConfig {
     public JerseyConfig() {
-        // Filters (ORDER MATTERS!)
+        // Register controllers
+        register(org.netflixpp.controller.StreamController.class);
+        register(org.netflixpp.controller.MeshController.class);
+
+        // Register filters (ORDER MATTERS!)
         register(LoggingFilter.class);    // First - log all requests
         register(JWTFilter.class);        // Second - authentication
         register(CORSFilter.class);       // Third - CORS headers
 
         // JSON support
         register(org.glassfish.jersey.jackson.JacksonFeature.class);
-
-        // Scan backend controllers (they will be in classpath)
-        packages("org.netflixpp.controller");
 
         // Multipart support for file uploads
         register(org.glassfish.jersey.media.multipart.MultiPartFeature.class);

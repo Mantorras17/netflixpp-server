@@ -1,7 +1,7 @@
 package org.netflixpp.filter;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.ws.rs.container.ContainerRequestContext;
 import javax.ws.rs.container.ContainerRequestFilter;
@@ -15,7 +15,7 @@ import java.io.IOException;
 @Provider
 public class LoggingFilter implements ContainerRequestFilter, ContainerResponseFilter {
 
-    private static final Logger logger = LogManager.getLogger(LoggingFilter.class);
+    private static final Logger logger = LoggerFactory.getLogger(LoggingFilter.class);
 
     @Context
     private UriInfo uriInfo;
@@ -29,19 +29,11 @@ public class LoggingFilter implements ContainerRequestFilter, ContainerResponseF
         String method = requestContext.getMethod();
         String path = uriInfo.getRequestUri().getPath();
         String query = uriInfo.getRequestUri().getQuery();
-        String userAgent = requestContext.getHeaderString("User-Agent");
         String clientIP = getClientIP(requestContext);
 
         String fullPath = query != null ? path + "?" + query : path;
 
-        logger.info("▶️ REQUEST: {} {} from {} (User-Agent: {})",
-                method, fullPath, clientIP, userAgent);
-
-        // Log headers for debugging (only in DEBUG mode)
-        if (logger.isDebugEnabled()) {
-            requestContext.getHeaders().forEach((key, values) ->
-                    logger.debug("Header: {} = {}", key, values));
-        }
+        logger.info("▶️ {} {} from {}", method, fullPath, clientIP);
     }
 
     @Override
@@ -55,21 +47,9 @@ public class LoggingFilter implements ContainerRequestFilter, ContainerResponseF
             int status = responseContext.getStatus();
 
             String emoji = getStatusEmoji(status);
-            String level = getLogLevel(status);
 
-            switch (level) {
-                case "ERROR":
-                    logger.error("{} RESPONSE: {} {} -> {} ({}ms)",
-                            emoji, method, path, status, duration);
-                    break;
-                case "WARN":
-                    logger.warn("{} RESPONSE: {} {} -> {} ({}ms)",
-                            emoji, method, path, status, duration);
-                    break;
-                default:
-                    logger.info("{} RESPONSE: {} {} -> {} ({}ms)",
-                            emoji, method, path, status, duration);
-            }
+            logger.info("{} {} {} -> {} ({}ms)",
+                    emoji, method, path, status, duration);
 
             startTime.remove();
         }
@@ -95,28 +75,5 @@ public class LoggingFilter implements ContainerRequestFilter, ContainerResponseF
         if (status >= 400 && status < 500) return "⚠️";
         if (status >= 500) return "❌";
         return "🔷";
-    }
-
-    private String getLogLevel(int status) {
-        if (status >= 500) return "ERROR";
-        if (status >= 400) return "WARN";
-        return "INFO";
-    }
-
-    // Utility method for logging specific events
-    public static void logSecurityEvent(String event, String username, String details) {
-        logger.warn("🔐 SECURITY: {} - User: {} - Details: {}", event, username, details);
-    }
-
-    public static void logError(String operation, String details, Throwable throwable) {
-        logger.error("💥 ERROR: {} - Details: {}", operation, details, throwable);
-    }
-
-    public static void logStreamEvent(String movie, String quality, String clientIP) {
-        logger.info("🎬 STREAM: {} [{}] to {}", movie, quality, clientIP);
-    }
-
-    public static void logMeshEvent(String event, String file, String peer) {
-        logger.info("🕸️ MESH: {} - File: {} - Peer: {}", event, file, peer);
     }
 }

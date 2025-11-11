@@ -8,11 +8,7 @@ import java.util.Properties;
 public class ServerConfig {
     private static final Properties props = new Properties();
 
-    static {
-        loadConfig();
-    }
-
-    private static void loadConfig() {
+    public static void loadConfig() {
         try {
             // Default configuration
             props.setProperty("server.port", "8080");
@@ -22,6 +18,7 @@ public class ServerConfig {
             props.setProperty("log.level", "INFO");
             props.setProperty("cors.allowed.origins", "*");
             props.setProperty("jwt.secret", "NetflixPP_Server_Secret_ChangeInProduction_2024");
+            props.setProperty("chunk.size", "10485760"); // 10MB in bytes
 
             // Load from config file if exists
             File configFile = new File("server.properties");
@@ -43,7 +40,7 @@ public class ServerConfig {
             Files.createDirectories(Paths.get(getStoragePath(), "movies"));
             Files.createDirectories(Paths.get(getStoragePath(), "chunks"));
             Files.createDirectories(Paths.get(getStoragePath(), "temp"));
-            Files.createDirectories(Paths.get(getStoragePath(), "logs"));
+            Files.createDirectories(Paths.get("logs"));
             Files.createDirectories(Paths.get("nginx"));
         } catch (Exception e) {
             System.err.println("⚠️ Could not create directories: " + e.getMessage());
@@ -77,6 +74,10 @@ public class ServerConfig {
 
     public static String getJwtSecret() {
         return props.getProperty("jwt.secret");
+    }
+
+    public static int getChunkSize() {
+        return Integer.parseInt(props.getProperty("chunk.size"));
     }
 
     public static Properties getProperties() {
